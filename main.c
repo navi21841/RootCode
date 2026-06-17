@@ -1,4 +1,5 @@
 #define _DEFAULT_SOURCE
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <termios.h>
@@ -6,6 +7,9 @@
 #include <sys/ioctl.h>
 
 struct winsize terminal_size;
+char buffer[100][1024];
+int line_length[100];
+
 
 struct editor_info
 {
@@ -19,8 +23,9 @@ struct cursor_info
     int cursor_y;
 };
 
+struct cursor_info cursor;
+struct editor_info editor;
 struct termios original_terminal;
-
 void disable_raw_mode()
 {
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &original_terminal);
@@ -29,10 +34,14 @@ void disable_raw_mode()
 void enable_raw_mode()
 {
     tcgetattr(STDIN_FILENO, &original_terminal);
+
     struct termios raw = original_terminal;
+
     cfmakeraw(&raw);
-	raw.c_cc[VMIN] = 0;
+
+    raw.c_cc[VMIN] = 0;
     raw.c_cc[VTIME] = 1;
+
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
 }
 
@@ -40,49 +49,69 @@ void get_terminal_size()
 {
     ioctl(STDOUT_FILENO, TIOCGWINSZ, &terminal_size);
 }
-void cursor_movement(int col, int row){
-	char movement[32];
 
-	int len = snprintf(movement, sizeof(movement), "\x1b[%d;%dH", row, col);
+void cursor_movement(int col, int row)
+{
+    char movement[32];
+
+    int len = snprintf(movement, sizeof(movement), "\x1b[%d;%dH", row, col);
+
     write(STDOUT_FILENO, movement, len);
 }
-char buffer[100][1024];
-int total_lines[100];
-int no_of_line[100];
-struct cursor_info cursor;
-struct editor_info editor;
-void write_text(char *c){
-    buffer[cursor.cursor_y-1][cursor.cursor_x-1] = *c;
-	write(STDOUT_FILENO, c, 1);
-	cursor.cursor_x++;
-	cursor_movement(cursor.cursor_x, cursor.cursor_y);
+void backspace(char *c){
+
+
+
+
 }
+void write_text(char *c)
+{
+    int line = cursor.cursor_y - 1;
+    int col = cursor.cursor_x - 1;
 
+    if (line_length[line] >= 1023)
+    {
+        return;
+    }
+
+    for (int i = line_length[line]; i > col; i--)
+    {
+        buffer[line][i] = buffer[line][i - 1];
+    }
+
+    buffer[line][col] = *c;
+
+    line_length[line]++;
+    buffer[line][line_length[line]] = '\0';
+
+    write(STDOUT_FILENO, "\x1b[1@", 4);
+    write(STDOUT_FILENO, c, 1);
+
+    cursor.cursor_x++;
+    cursor_movement(cursor.cursor_x, cursor.cursor_y);
+}
 void text()
-{	
-	write(STDOUT_FILENO, "\x1b[2J", 4);  // clear whole screen
-	write(STDOUT_FILENO, "\x1b[H", 3);   // move cursor to top-left
-	get_terminal_size();
-	editor.terminal_rows = terminal_size.ws_row;
-	editor.terminal_cols = terminal_size.ws_col;
-	cursor.cursor_x = 1;
-	cursor.cursor_y = 1;
-	for (int i = 0; i < 100; i++)
-	{
-		total_lines[i] = i+1;
-	}
-	
+{
+    for (int i = 0; i < 100; i++)
+    {
+        line_length[i] = 0;
+    }
+    write(STDOUT_FILENO, "\x1b[2J", 4); // clear whole screen
+    write(STDOUT_FILENO, "\x1b[H", 3);  // move cursor to top-left
+    cursor.cursor_x = 1;
+    cursor.cursor_y = 1;
     enable_raw_mode();
-
+    
     char c;
-
+    
     while (1)
     {
         int n = read(STDIN_FILENO, &c, 1);
-
+        get_terminal_size();
+        editor.terminal_rows = terminal_size.ws_row;
+        editor.terminal_cols = terminal_size.ws_col;
         if (n == 1)
         {
-
             if (c == 17)
             {
                 disable_raw_mode();
@@ -90,21 +119,32 @@ void text()
             }
             else if (c == '\r')
             {
-                // printf("ENTER\r\n");
+                if (cursor.cursor_y < 100)
+                {
+                    cursor.cursor_y++;
+                    cursor.cursor_x = 1;
+
+                    cursor_movement(cursor.cursor_x, cursor.cursor_y);
+                }
             }
             else if (c == 127 || c == 8)
             {
-                // printf("BACKSPACE\r\n");
-                 if (cursor.cursor_x > 1)
+                if (cursor.cursor_x > 1)
                 {
+                    int line = cursor.cursor_y - 1;
+                    int delete_index = cursor.cursor_x - 2;
+
+                    for (int i = delete_index; i < line_length[line]; i++)
+                    {
+                        buffer[line][i] = buffer[line][i + 1];
+                    }
+
+                    line_length[line]--;
+
                     cursor.cursor_x--;
-                    buffer[cursor.cursor_y - 1][cursor.cursor_x - 1] = '\0';
                     cursor_movement(cursor.cursor_x, cursor.cursor_y);
 
-                    char space = ' ';
-                    write(STDOUT_FILENO, &space, 1);
-
-                    cursor_movement(cursor.cursor_x, cursor.cursor_y);
+                    write(STDOUT_FILENO, "\x1b[1P", 4);
                 }
             }
             else if (c == '\t')
@@ -126,38 +166,39 @@ void text()
                 else if (seq[0] == '[' && seq[1] == 'A')
                 {
                     // printf("UP ARROW\r\n");
-					if (cursor.cursor_y > 1)
-					{
-						cursor.cursor_y--;
-						cursor_movement(cursor.cursor_x,cursor.cursor_y);
-					}
+
+                    if (cursor.cursor_y > 1)
+                    {
+                        cursor.cursor_y--;
+                        cursor_movement(cursor.cursor_x, cursor.cursor_y);
+                    }
                 }
                 else if (seq[0] == '[' && seq[1] == 'B')
                 {
                     // printf("DOWN ARROW\r\n");
-						cursor.cursor_y++;
-						cursor_movement(cursor.cursor_x,cursor.cursor_y);
 
+                    cursor.cursor_y++;
+                    cursor_movement(cursor.cursor_x, cursor.cursor_y);
                 }
                 else if (seq[0] == '[' && seq[1] == 'C')
                 {
                     // printf("RIGHT ARROW\r\n");
-					if (cursor.cursor_x < editor.terminal_cols)
-					{
-						cursor.cursor_x++;
-						cursor_movement(cursor.cursor_x,cursor.cursor_y);
-					}
-					
+                    int line = cursor.cursor_y - 1;
+                    if (cursor.cursor_x < line_length[line]+1)
+                    {
+                        cursor.cursor_x++;
+                        cursor_movement(cursor.cursor_x, cursor.cursor_y);
+                    }
                 }
                 else if (seq[0] == '[' && seq[1] == 'D')
                 {
                     // printf("LEFT ARROW\r\n");
-					if (cursor.cursor_x > 1)
-					{
-						cursor.cursor_x--;
-						cursor_movement(cursor.cursor_x,cursor.cursor_y);
-					}
-					
+
+                    if (cursor.cursor_x > 1)
+                    {
+                        cursor.cursor_x--;
+                        cursor_movement(cursor.cursor_x, cursor.cursor_y);
+                    }
                 }
                 else
                 {
@@ -167,7 +208,7 @@ void text()
             else if (c >= 32 && c <= 126)
             {
                 // printf("NORMAL KEY: %c\r\n", c);
-				write_text(&c);
+                write_text(&c);
             }
             else
             {
