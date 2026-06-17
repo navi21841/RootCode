@@ -149,60 +149,100 @@ void text()
             }
             else if (c == '\t')
             {
-                // printf("TAB\r\n");
+                char space = ' ';
+
+                for (int i = 0; i < 4; i++)
+                {
+                    write_text(&space);
+                }
             }
             else if (c == 27)
             {
-                char seq[2];
+                char seq[3];
 
                 if (read(STDIN_FILENO, &seq[0], 1) != 1)
                 {
-                    // printf("ESC\r\n");
+                    // ESC alone
                 }
                 else if (read(STDIN_FILENO, &seq[1], 1) != 1)
                 {
-                    // printf("ESC\r\n");
-                }
-                else if (seq[0] == '[' && seq[1] == 'A')
-                {
-                    // printf("UP ARROW\r\n");
-
-                    if (cursor.cursor_y > 1)
-                    {
-                        cursor.cursor_y--;
-                        cursor_movement(cursor.cursor_x, cursor.cursor_y);
-                    }
-                }
-                else if (seq[0] == '[' && seq[1] == 'B')
-                {
-                    // printf("DOWN ARROW\r\n");
-
-                    cursor.cursor_y++;
-                    cursor_movement(cursor.cursor_x, cursor.cursor_y);
-                }
-                else if (seq[0] == '[' && seq[1] == 'C')
-                {
-                    // printf("RIGHT ARROW\r\n");
-                    int line = cursor.cursor_y - 1;
-                    if (cursor.cursor_x < line_length[line]+1)
-                    {
-                        cursor.cursor_x++;
-                        cursor_movement(cursor.cursor_x, cursor.cursor_y);
-                    }
-                }
-                else if (seq[0] == '[' && seq[1] == 'D')
-                {
-                    // printf("LEFT ARROW\r\n");
-
-                    if (cursor.cursor_x > 1)
-                    {
-                        cursor.cursor_x--;
-                        cursor_movement(cursor.cursor_x, cursor.cursor_y);
-                    }
+                    // ESC alone
                 }
                 else
                 {
-                    // printf("UNKNOWN ESCAPE KEY\r\n");
+                    if (seq[0] == '[')
+                    {
+                        if (seq[1] == 'A')
+                        {
+                            // UP ARROW
+                            if (cursor.cursor_y > 1)
+                            {
+                                cursor.cursor_y--;
+                                cursor_movement(cursor.cursor_x, cursor.cursor_y);
+                            }
+                        }
+                        else if (seq[1] == 'B')
+                        {
+                            // DOWN ARROW
+                            cursor.cursor_y++;
+                            cursor_movement(cursor.cursor_x, cursor.cursor_y);
+                        }
+                        else if (seq[1] == 'C')
+                        {
+                            // RIGHT ARROW
+                            int line = cursor.cursor_y - 1;
+
+                            if (cursor.cursor_x < line_length[line] + 1)
+                            {
+                                cursor.cursor_x++;
+                                cursor_movement(cursor.cursor_x, cursor.cursor_y);
+                            }
+                        }
+                        else if (seq[1] == 'D')
+                        {
+                            // LEFT ARROW
+                            if (cursor.cursor_x > 1)
+                            {
+                                cursor.cursor_x--;
+                                cursor_movement(cursor.cursor_x, cursor.cursor_y);
+                            }
+                        }
+                        else if (seq[1] == 'H')
+                        {
+                            // HOME KEY
+                            cursor.cursor_x = 1;
+                            cursor_movement(cursor.cursor_x, cursor.cursor_y);
+                        }
+                        else if (seq[1] == 'F')
+                        {
+                            // END KEY
+                            int line = cursor.cursor_y - 1;
+
+                            cursor.cursor_x = line_length[line] + 1;
+                            cursor_movement(cursor.cursor_x, cursor.cursor_y);
+                        }
+                        else if (seq[1] >= '0' && seq[1] <= '9')
+                        {
+                            if (read(STDIN_FILENO, &seq[2], 1) != 1)
+                            {
+                                // unknown
+                            }
+                            else if (seq[1] == '1' && seq[2] == '~')
+                            {
+                                // HOME KEY
+                                cursor.cursor_x = 1;
+                                cursor_movement(cursor.cursor_x, cursor.cursor_y);
+                            }
+                            else if (seq[1] == '4' && seq[2] == '~')
+                            {
+                                // END KEY
+                                int line = cursor.cursor_y - 1;
+
+                                cursor.cursor_x = line_length[line] + 1;
+                                cursor_movement(cursor.cursor_x, cursor.cursor_y);
+                            }
+                        }
+                    }
                 }
             }
             else if (c >= 32 && c <= 126)
