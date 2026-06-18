@@ -5,7 +5,9 @@
 #include <termios.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
+#include <string.h>
 
+void file_saving(char *filename, char buffer[][1024], int total_lines, int line_length[]);
 struct winsize terminal_size;
 char buffer[100][1024];
 int line_length[100];
@@ -59,6 +61,21 @@ void cursor_movement(int col, int row)
 
     write(STDOUT_FILENO, movement, len);
 }
+void redraw_screen()
+{
+    write(STDOUT_FILENO, "\x1b[2J", 4);
+    write(STDOUT_FILENO, "\x1b[H", 3);
+
+    for (int i = 0; i < total_lines; i++)
+    {
+        cursor_movement(1, i + 1);
+        write(STDOUT_FILENO, "\x1b[2K", 4);
+        write(STDOUT_FILENO, buffer[i], line_length[i]);
+    }
+
+    cursor_movement(cursor.cursor_x, cursor.cursor_y);
+}
+
 
 void write_text(char *c)
 {
@@ -169,7 +186,28 @@ void text()
 
                     cursor_movement(cursor.cursor_x, cursor.cursor_y);
                 }
-            }
+            } 
+            if (c == 19)  // Ctrl+S
+            {
+                disable_raw_mode();
+
+                cursor_movement(1, editor.terminal_rows);
+                write(STDOUT_FILENO, "\x1b[2K", 4);
+
+                char filename[256];
+
+                printf("Save as: ");
+                fflush(stdout);
+
+                fgets(filename, sizeof(filename), stdin);
+
+                // remove '\n' from filename
+
+                file_saving(filename, buffer, total_lines, line_length);
+
+                enable_raw_mode();
+                redraw_screen();
+            } 
             else if (c == 127 || c == 8)
             {
                 int line = cursor.cursor_y - 1;
@@ -259,7 +297,7 @@ void text()
                 else if (read(STDIN_FILENO, &seq[1], 1) != 1)
                 {
                     // ESC alone
-                }
+                }    
                 else
                 {
                     if (seq[0] == '[')
