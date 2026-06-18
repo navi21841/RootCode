@@ -97,8 +97,9 @@ void text()
         buffer[i][0] = '\0';
     }
 
-    write(STDOUT_FILENO, "\x1b[2J", 4); // clear whole screen
-    write(STDOUT_FILENO, "\x1b[H", 3);  // move cursor to top-left
+    write(STDOUT_FILENO, "\x1b[?1049h", 8);
+    write(STDOUT_FILENO, "\x1b[2J", 4);
+    write(STDOUT_FILENO, "\x1b[H", 3);
 
     cursor.cursor_x = 1;
     cursor.cursor_y = 1;
@@ -119,6 +120,7 @@ void text()
         {
             if (c == 17)
             {
+                write(STDOUT_FILENO, "\x1b[?1049l", 8);
                 disable_raw_mode();
                 break;
             }
@@ -126,9 +128,44 @@ void text()
             {
                 if (cursor.cursor_y < 100 && total_lines < 100)
                 {
+                    int current_line = cursor.cursor_y - 1;
+                    int new_line = current_line + 1;
+                    int col = cursor.cursor_x - 1;
+
+                    int right_length = line_length[current_line] - col;
+
+                    for (int i = total_lines; i > new_line; i--)
+                    {
+                        for (int j = 0; j <= line_length[i - 1]; j++)
+                        {
+                            buffer[i][j] = buffer[i - 1][j];
+                        }
+
+                        line_length[i] = line_length[i - 1];
+                    }
+
+                    for (int i = 0; i < right_length; i++)
+                    {
+                        buffer[new_line][i] = buffer[current_line][col + i];
+                    }
+
+                    buffer[new_line][right_length] = '\0';
+                    line_length[new_line] = right_length;
+
+                    line_length[current_line] = col;
+                    buffer[current_line][col] = '\0';
+
+                    total_lines++;
+
                     cursor.cursor_y++;
                     cursor.cursor_x = 1;
-                    total_lines++;
+
+                    for (int i = current_line; i < total_lines; i++)
+                    {
+                        cursor_movement(1, i + 1);
+                        write(STDOUT_FILENO, "\x1b[2K", 4);
+                        write(STDOUT_FILENO, buffer[i], line_length[i]);
+                    }
 
                     cursor_movement(cursor.cursor_x, cursor.cursor_y);
                 }
@@ -267,8 +304,13 @@ void text()
                             if (cursor.cursor_x < line_length[line] + 1)
                             {
                                 cursor.cursor_x++;
-                                cursor_movement(cursor.cursor_x, cursor.cursor_y);
                             }
+                            else if (cursor.cursor_x == line_length[line] + 1 && cursor.cursor_y < total_lines)
+                            {
+                                cursor.cursor_y++;
+                                cursor.cursor_x = 1;
+                            }
+                            cursor_movement(cursor.cursor_x, cursor.cursor_y);
                         }
                         else if (seq[1] == 'D')
                         {
@@ -276,8 +318,16 @@ void text()
                             if (cursor.cursor_x > 1)
                             {
                                 cursor.cursor_x--;
-                                cursor_movement(cursor.cursor_x, cursor.cursor_y);
                             }
+                            else if (cursor.cursor_x == 1 && cursor.cursor_y > 1)
+                            {
+                                cursor.cursor_y--;
+
+                                int line = cursor.cursor_y - 1;
+                                cursor.cursor_x = line_length[line] + 1;
+                            }
+
+                            cursor_movement(cursor.cursor_x, cursor.cursor_y);
                         }
                         else if (seq[1] == 'H')
                         {
