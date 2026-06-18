@@ -9,7 +9,7 @@
 struct winsize terminal_size;
 char buffer[100][1024];
 int line_length[100];
-
+int total_lines = 1;
 
 struct editor_info
 {
@@ -26,6 +26,7 @@ struct cursor_info
 struct cursor_info cursor;
 struct editor_info editor;
 struct termios original_terminal;
+
 void disable_raw_mode()
 {
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &original_terminal);
@@ -58,12 +59,7 @@ void cursor_movement(int col, int row)
 
     write(STDOUT_FILENO, movement, len);
 }
-void backspace(char *c){
 
-
-
-
-}
 void write_text(char *c)
 {
     int line = cursor.cursor_y - 1;
@@ -90,26 +86,35 @@ void write_text(char *c)
     cursor.cursor_x++;
     cursor_movement(cursor.cursor_x, cursor.cursor_y);
 }
+
 void text()
 {
+    total_lines = 1;
+
     for (int i = 0; i < 100; i++)
     {
         line_length[i] = 0;
+        buffer[i][0] = '\0';
     }
+
     write(STDOUT_FILENO, "\x1b[2J", 4); // clear whole screen
     write(STDOUT_FILENO, "\x1b[H", 3);  // move cursor to top-left
+
     cursor.cursor_x = 1;
     cursor.cursor_y = 1;
+
     enable_raw_mode();
-    
+
     char c;
-    
+
     while (1)
     {
         int n = read(STDIN_FILENO, &c, 1);
+
         get_terminal_size();
         editor.terminal_rows = terminal_size.ws_row;
         editor.terminal_cols = terminal_size.ws_col;
+
         if (n == 1)
         {
             if (c == 17)
@@ -119,19 +124,21 @@ void text()
             }
             else if (c == '\r')
             {
-                if (cursor.cursor_y < 100)
+                if (cursor.cursor_y < 100 && total_lines < 100)
                 {
                     cursor.cursor_y++;
                     cursor.cursor_x = 1;
+                    total_lines++;
 
                     cursor_movement(cursor.cursor_x, cursor.cursor_y);
                 }
             }
             else if (c == 127 || c == 8)
             {
+                int line = cursor.cursor_y - 1;
+
                 if (cursor.cursor_x > 1)
                 {
-                    int line = cursor.cursor_y - 1;
                     int delete_index = cursor.cursor_x - 2;
 
                     for (int i = delete_index; i < line_length[line]; i++)
@@ -145,6 +152,54 @@ void text()
                     cursor_movement(cursor.cursor_x, cursor.cursor_y);
 
                     write(STDOUT_FILENO, "\x1b[1P", 4);
+                }
+                else if (cursor.cursor_x == 1 && cursor.cursor_y > 1)
+                {
+                    int current_line = cursor.cursor_y - 1;
+                    int previous_line = cursor.cursor_y - 2;
+
+                    int old_previous_length = line_length[previous_line];
+
+                    if (line_length[previous_line] + line_length[current_line] < 1023)
+                    {
+                        for (int i = 0; i < line_length[current_line]; i++)
+                        {
+                            buffer[previous_line][old_previous_length + i] = buffer[current_line][i];
+                        }
+
+                        line_length[previous_line] += line_length[current_line];
+                        buffer[previous_line][line_length[previous_line]] = '\0';
+
+                        for (int i = current_line; i < total_lines - 1; i++)
+                        {
+                            for (int j = 0; j <= line_length[i + 1]; j++)
+                            {
+                                buffer[i][j] = buffer[i + 1][j];
+                            }
+
+                            line_length[i] = line_length[i + 1];
+                        }
+
+                        line_length[total_lines - 1] = 0;
+                        buffer[total_lines - 1][0] = '\0';
+
+                        total_lines--;
+
+                        cursor.cursor_y--;
+                        cursor.cursor_x = old_previous_length + 1;
+
+                        for (int i = previous_line; i < total_lines; i++)
+                        {
+                            cursor_movement(1, i + 1);
+                            write(STDOUT_FILENO, "\x1b[2K", 4);
+                            write(STDOUT_FILENO, buffer[i], line_length[i]);
+                        }
+
+                        cursor_movement(1, total_lines + 1);
+                        write(STDOUT_FILENO, "\x1b[2K", 4);
+
+                        cursor_movement(cursor.cursor_x, cursor.cursor_y);
+                    }
                 }
             }
             else if (c == '\t')
@@ -178,14 +233,31 @@ void text()
                             if (cursor.cursor_y > 1)
                             {
                                 cursor.cursor_y--;
+
+                                int line = cursor.cursor_y - 1;
+                                if (cursor.cursor_x > line_length[line] + 1)
+                                {
+                                    cursor.cursor_x = line_length[line] + 1;
+                                }
+
                                 cursor_movement(cursor.cursor_x, cursor.cursor_y);
                             }
                         }
                         else if (seq[1] == 'B')
                         {
                             // DOWN ARROW
-                            cursor.cursor_y++;
-                            cursor_movement(cursor.cursor_x, cursor.cursor_y);
+                            if (cursor.cursor_y < total_lines)
+                            {
+                                cursor.cursor_y++;
+
+                                int line = cursor.cursor_y - 1;
+                                if (cursor.cursor_x > line_length[line] + 1)
+                                {
+                                    cursor.cursor_x = line_length[line] + 1;
+                                }
+
+                                cursor_movement(cursor.cursor_x, cursor.cursor_y);
+                            }
                         }
                         else if (seq[1] == 'C')
                         {
@@ -247,7 +319,6 @@ void text()
             }
             else if (c >= 32 && c <= 126)
             {
-                // printf("NORMAL KEY: %c\r\n", c);
                 write_text(&c);
             }
             else
